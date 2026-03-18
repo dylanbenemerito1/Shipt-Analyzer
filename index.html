@@ -370,6 +370,11 @@ body{display:flex;flex-direction:column;min-height:100vh;max-width:480px;margin:
     <div class="card-title">Scoring breakdown</div>
     <div style="font-size:12px;color:var(--muted);line-height:1.9;">Pay/min vs target rate (up to 45pts)<br>Pay vs minimum threshold (20pts)<br>Distance and item penalties (up to -15pts each)<br>Tip intelligence bonus (up to 15pts)<br>Batch bonus when paired with nearby order (up to +20pts)<br><br><span style="color:var(--green);font-weight:500;">Take</span> = 65+&nbsp;&nbsp;<span style="color:var(--amber);font-weight:500;">Maybe</span> = 40-64&nbsp;&nbsp;<span style="color:var(--red);font-weight:500;">Skip</span> = below 40</div>
   </div>
+  <div class="card">
+    <div class="card-title">Storage</div>
+    <div id="storageInfo" style="font-size:12px;color:var(--muted);margin-bottom:10px;">Calculating...</div>
+    <button class="btn" onclick="if(confirm('Clear ALL claimed orders, tips and history? This cannot be undone.')){claimedOrders=[];saveAll();renderBadge();renderStats();renderPendingTips();updateStorageInfo();notify('All data cleared');}" style="background:var(--red-light);color:var(--red);border:1px solid #fca5a5;font-size:12px;padding:10px;margin-top:0;">Clear all order data</button>
+  </div>
 </div>
 
 </div>
@@ -387,9 +392,19 @@ var queue = [];
 var analyzing = false;
 
 try { claimedOrders = JSON.parse(localStorage.getItem('soa_claimed') || '[]'); } catch(e) { claimedOrders = []; }
-function saveAll() { localStorage.setItem('soa_claimed', JSON.stringify(claimedOrders)); }
+function saveAll() {
+  var toSave = claimedOrders.map(function(o) { var c = Object.assign({}, o); delete c.imgB64; delete c.imgMime; return c; });
+  try {
+    localStorage.setItem('soa_claimed', JSON.stringify(toSave));
+  } catch(e) {
+    notify('Storage full — trimming oldest orders', true);
+    var trimmed = toSave.slice(0, Math.max(1, Math.floor(toSave.length * 0.8)));
+    try { localStorage.setItem('soa_claimed', JSON.stringify(trimmed)); claimedOrders = claimedOrders.slice(0, trimmed.length); }
+    catch(e2) { notify('Storage full — clear old orders in Stats tab', true); }
+  }
+}
 
-applySettings(); renderKeyStatus(); renderKeyBanner(); renderBadge();
+applySettings(); renderKeyStatus(); renderKeyBanner(); renderBadge(); setTimeout(updateStorageInfo, 100);
 
 // ════════ NOTIFY ════════
 function notify(msg, isErr) {
@@ -408,8 +423,17 @@ function goTab(id, btn) {
   if (id === 'results') renderResults();
   if (id === 'stats') renderStats();
   if (id === 'tips') renderPendingTips();
+  if (id === 'settings') updateStorageInfo();
 }
 function renderBadge() { document.getElementById('cbadge').textContent = claimedOrders.length + ' claimed'; }
+function updateStorageInfo() {
+  var el = document.getElementById('storageInfo'); if (!el) return;
+  var total = 0; try { for (var k in localStorage) { if (localStorage.hasOwnProperty(k)) total += ((localStorage[k]||'').length * 2); } } catch(e) {}
+  var kb = Math.round(total / 1024);
+  var pct = Math.min(100, Math.round(kb / 5120 * 100));
+  var color = pct > 80 ? 'var(--red)' : pct > 50 ? 'var(--amber)' : 'var(--green)';
+  el.innerHTML = 'Storage used: <strong style="color:'+color+';">'+kb+'KB / 5120KB ('+pct+'%)</strong><br><span style="color:var(--muted);">'+claimedOrders.length+' orders saved · screenshots not stored (session only)</span>';
+}
 
 // ════════ REGION ════════
 function extractRegion(address) {
